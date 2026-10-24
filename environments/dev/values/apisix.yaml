@@ -1,23 +1,21 @@
 # Upstream chart apisix/apisix 2.18.2 (APISIX 3.19.0) from
 # https://apache.github.io/apisix-helm-chart, with its bundled
 # apisix-ingress-controller subchart. Not vendored or repackaged here.
-# Target: the grievance RKE2 node (13.233.56.204, ingress-nginx), not the OpenG2P cluster
-# that `server` in ../endpoints.yaml names.
+# Target: the gateway cluster, which runs only APISIX and fronts every app cluster
+# (grievance, A2C). Not the OpenG2P cluster that `server` in ../endpoints.yaml names.
+# The same file runs a local single-node cluster (docs/grievance-service.md, "Local
+# cluster").
 # Release: name `apisix`, namespace `apisix`. See docs/apisix-gateway.md.
 
 apisix:
   # OAN routes use `:param` path segments.
   router:
     http: radixtree_uri_with_parameter
-  # Rate limits key on the client address. ingress-nginx sets X-Real-IP; trust it only
-  # from Pods (10.42.0.0/16 is the RKE2 default cluster CIDR, confirm on the node).
-  nginx:
-    http:
-      realIpHeader: X-Real-IP
-      realIpFrom:
-        - 127.0.0.1
-        - "unix:"
-        - 10.42.0.0/16
+  # APISIX is the edge: it terminates TLS itself (certificates come from each app's
+  # ApisixTls) and binds the node's port 443.
+  ssl:
+    enabled: true
+    hostPort: 443
   # Metrics on containerPort 9091 at /apisix/prometheus/metrics; the prometheus global
   # rule below records them for every route.
   prometheus:
@@ -28,18 +26,48 @@ apisix:
       # environment's secret process. Never commit the keys.
       secretName: apisix-admin-credentials
     allow:
-      # Narrow to the cluster Pod CIDR once confirmed; the chart default allows any address.
+      # The Ingress Controller Pod. The Admin API Service is ClusterIP and needs the admin
+      # key, so the private ranges cover any cluster's Pod CIDR without naming it.
       ingressControllerExtraIpList:
-        - 0.0.0.0/0
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
 
-# ingress-nginx on the node keeps public traffic and TLS (Let's Encrypt) and forwards the
-# grievance host to this Service, so it stays internal.
+# hostPort 80/443 can be held by one Pod per node, so an upgrade must stop the old Pod
+# before it starts the new one; a rolling update leaves the new Pod Pending.
+updateStrategy:
+  type: Recreate
+  rollingUpdate: null
+
+# A2C partner routes replace the caller's Authorization with the Frappe service user's
+# credential, which APISIX reads from its environment ($env://A2C_FRAPPE_SERVICE_AUTHORIZATION).
+# Secret a2c-frappe-service-credential (key `authorization`) in namespace apisix.
+extraEnvVars:
+  - name: A2C_FRAPPE_SERVICE_AUTHORIZATION
+    valueFrom:
+      secretKeyRef:
+        name: a2c-frappe-service-credential
+        key: authorization
+        optional: true
+
+# Nothing proxies in front of APISIX, so clients connect to it directly and rate limits
+# see their own address. No X-Real-IP is trusted (chart default `realIpFrom`), so a
+# client cannot spoof its address to escape a limit.
 service:
   type: ClusterIP
+  http:
+    enabled: true
+    servicePort: 80
+    # Port 80 stays open for the ACME HTTP-01 challenge and the redirect to HTTPS.
+    hostPort: 80
 
 # Built-in etcd is meant for development only. Use externalEtcd in production.
 etcd:
   enabled: true
+  replicaCount: 1
+  persistence:
+    storageClass: local-path-shared
+    size: 1Gi
 
 ingress-controller:
   enabled: true

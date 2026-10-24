@@ -1,0 +1,111 @@
+{{- include "a2c.validate" . }}
+{{/*
+Writes the settings the upstream chart has no hook for, on every install and upgrade:
+
+- siteConfig into sites/<siteName>/site_config.json
+- the OpenG2P credentials from Secret `secrets.openg2p`, when it exists, into the same file
+- the JWT private key from Secret `secrets.jwt` into sites/<siteName>/keys/jwt_v1.pem,
+  which oan_auth_service resolves with frappe.get_site_path()
+- then `bench migrate`, replacing the upstream migrate job, which runs in parallel with
+  create-site and fails on a first install because the site does not exist yet
+
+Upstream jobs are not Helm hooks and run in parallel with this one, so it waits until
+the create-site job has installed oan_a2c before writing. Frappe re-reads the config
+within 60 seconds, so running pods need no restart.
+
+A2C enqueues only to the default, short and long queues, which upstream already runs.
+*/}}
+{{- $site := .Values.siteName }}
+{{- $conf := dict }}
+{{- range $key, $value := .Values.siteConfig }}
+{{- if not (and (kindIs "string" $value) (eq $value "")) }}
+{{- $_ := set $conf $key $value }}
+{{- end }}
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-site-config-{{ now | date "20060102150405" }}
+  labels:
+    {{- include "a2c.labels" . | nindent 4 }}
+    app.kubernetes.io/component: site-config
+spec:
+  backoffLimit: {{ .Values.siteConfigJob.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.siteConfigJob.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "a2c.labels" . | nindent 8 }}
+        app.kubernetes.io/component: site-config
+    spec:
+      restartPolicy: Never
+      {{- with .Values.frappe.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.frappe.podSecurityContext | nindent 8 }}
+      containers:
+      - name: site-config
+        image: {{ include "a2c.image" . }}
+        imagePullPolicy: {{ .Values.frappe.image.pullPolicy }}
+        securityContext:
+          {{- toYaml .Values.frappe.securityContext | nindent 10 }}
+        workingDir: /home/frappe/frappe-bench/sites
+        command: ["bash", "-c"]
+        args:
+        - |
+          set -euo pipefail
+          # site_config.json exists from the start of `bench new-site`; the site is ready
+          # only once the last app is installed.
+          until [ -f "$SITE_NAME/site_config.json" ] && (cd .. && bench --site "$SITE_NAME" list-apps 2>/dev/null) | grep -q '^oan_a2c'; do
+            echo "waiting for site $SITE_NAME"; sleep 10
+          done
+          mkdir -p "$SITE_NAME/keys"
+          (umask 077 && printf '%s\n' "$JWT_PRIVATE_KEY" > "$SITE_NAME/keys/jwt_v1.pem")
+          /home/frappe/frappe-bench/env/bin/python - <<'EOF'
+          import json, os
+
+          conf_path = os.environ["SITE_NAME"] + "/site_config.json"
+          with open(conf_path) as f:
+              conf = json.load(f)
+          conf.update(json.loads(os.environ["SITE_CONFIG"]))
+          for key in ("openg2p_username", "openg2p_password"):
+              if os.environ.get(key.upper()):
+                  conf[key] = os.environ[key.upper()]
+          with open(conf_path + ".tmp", "w") as f:
+              json.dump(conf, f, indent=1, sort_keys=True)
+          os.replace(conf_path + ".tmp", conf_path)
+          EOF
+          echo "site config written for $SITE_NAME"
+          cd /home/frappe/frappe-bench
+          bench --site "$SITE_NAME" migrate
+        env:
+        - name: SITE_NAME
+          value: {{ $site | quote }}
+        - name: SITE_CONFIG
+          value: {{ toJson $conf | quote }}
+        - name: JWT_PRIVATE_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.secrets.jwt }}
+              key: jwt_v1.pem
+        - name: OPENG2P_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.secrets.openg2p }}
+              key: username
+              optional: true
+        - name: OPENG2P_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.secrets.openg2p }}
+              key: password
+              optional: true
+        volumeMounts:
+        - name: sites-dir
+          mountPath: /home/frappe/frappe-bench/sites
+      volumes:
+      - name: sites-dir
+        persistentVolumeClaim:
+          claimName: {{ include "a2c.sitesClaim" . }}

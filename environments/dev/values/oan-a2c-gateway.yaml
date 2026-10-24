@@ -1,24 +1,39 @@
 # Values for the oan-a2c-gateway chart (oan_a2c/apisix/k8s).
-# Target: not decided. A2C dev runs on docker-compose on EC2 (site mysite.localhost), and
-# staging_ati through oan-kustomize and ArgoCD; neither is a cluster these values name.
-# Install in the namespace of the A2C Frappe Service. See docs/apisix-gateway.md.
+# Target: the gateway cluster, namespace `a2c`, next to the grievance routes. The routes
+# reach A2C Frappe in the A2C app cluster through the node port of gatewayAccess in
+# oan-a2c.yaml. See docs/apisix-gateway.md and docs/a2c.md.
+#
+# Set at install, not here:
+# - web.externalHost: the A2C app node's private address, from the gateway cluster's
+#   network (locally: the OrbStack node address)
 
 ingressClassName: apisix
 
-# Unconfirmed public endpoints stay unset; an empty list matches any host.
-hosts: []
+# The public host; routes match it, so A2C and grievance (which share /v1/auth/*) stay
+# apart on one gateway.
+hosts:
+  - a2c-backend-dev.oanstaging.com
 
-# Required: Frappe site name, sent as Host because Frappe selects the site from it.
-siteName: ""
+# APISIX terminates TLS for `hosts` with this Secret (tls.crt, tls.key) in namespace
+# `a2c`. Dev: written by cert-manager. Local: a locally generated certificate.
+tls:
+  secretName: oan-a2c-tls
 
-# Required: the A2C Frappe nginx Service, unconfirmed.
+# Frappe site name, sent as Host because Frappe selects the site from it. Must equal
+# siteName in oan-a2c.yaml.
+siteName: develop.a2c.test
+
+# With externalHost set, serviceName only names the ApisixUpstream, and port is the node
+# port of oan-a2c.yaml gatewayAccess. Without it, serviceName and port are a Service in
+# this namespace (APISIX and Frappe in one cluster).
 web:
-  serviceName: ""
-  port: 8080
+  serviceName: a2c-frappe-gunicorn
+  externalHost: ""
+  port: 30810
 
-# Required: a Redis in the same cluster for limit-count counters.
+# Limit-count counters, in the gateway cluster (valkey-gateway.yaml).
 redis:
-  host: ""
+  host: apisix-valkey.apisix.svc.cluster.local
 
 # Source addresses allowed on the partner webhook routes. Development defaults; narrow to
 # the partners' egress CIDRs (OpenG2P, telco IVR) before go-live.

@@ -1,0 +1,128 @@
+# Defaults for the OAN A2C (Access to Credit). Per-environment values live in
+# environments/<env>/values/oan-a2c.yaml. Secrets are never set here: every secret is a
+# Kubernetes Secret created outside Git (docs/a2c.md).
+
+# Frappe site this release serves. The create-site, migrate and site-config jobs and
+# the gateway's Host rewrite all use it.
+siteName: ""
+
+# Secrets created outside Git, in the release namespace.
+secrets:
+  # Key `jwt_v1.pem`: unencrypted RSA private key, at least 2048 bits. oan_auth_service
+  # refuses every login without it.
+  jwt: oan-a2c-jwt
+  # Keys `username`, `password` of the OpenG2P portal agent. Optional: without the
+  # Secret, those two settings stay unset.
+  openg2p: oan-a2c-openg2p
+
+# Non-secret keys written to sites/<siteName>/site_config.json by the site-config job.
+# Keys left out keep their current value.
+siteConfig:
+  host_name: ""
+  jwt_current_kid: v1
+  jwt_private_keys:
+    v1: keys/jwt_v1.pem
+  jwt_self_registerable_roles:
+  - A2C Bank Admin
+  - A2C Farmer
+  jwt_access_token_ttl: 900
+  jwt_refresh_token_ttl: 604800
+  jwt_refresh_token_ttl_remember_me: 7776000
+  jwt_issuer: oan-a2c
+  jwt_enforce_https: true
+  openg2p_base_url: ""
+  openg2p_db: ""
+
+siteConfigJob:
+  # Delete finished site-config Jobs after a day; a new one runs on every upgrade.
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 3
+
+# Services for an APISIX gateway in another cluster (the gateway chart's web.externalHost).
+# Off when APISIX runs in this cluster: it reaches the upstream chart's ClusterIP Service
+# directly. Restrict the port to the gateway cluster's addresses (security group, or
+# loadBalancerSourceRanges); it carries plain HTTP.
+gatewayAccess:
+  enabled: false
+  # NodePort, or LoadBalancer with the provider's internal-load-balancer annotations.
+  type: NodePort
+  annotations: {}
+  loadBalancerSourceRanges: []
+  web:
+    port: 8000
+    nodePort: null
+
+# Every Frappe container gets these. FRAPPE_STREAM_LOGGING sends frappe.logger output to
+# stdout for the cluster log collector. FRAPPE_SENTRY_DSN is optional: without the
+# Secret, Sentry stays off.
+commonEnv: &frappeEnv
+- name: FRAPPE_STREAM_LOGGING
+  value: "1"
+- name: FRAPPE_SENTRY_DSN
+  valueFrom:
+    secretKeyRef:
+      name: oan-a2c-sentry
+      key: dsn
+      optional: true
+
+# Upstream frappe/helm `erpnext` chart, aliased `frappe`. Its values go under this key.
+# Check names with `helm show values frappe/erpnext --version 8.0.89`.
+frappe:
+  image:
+    repository: ""
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  # Database: either mariadb-sts (in-chart, official mariadb image) or an external host
+  # via dbHost + dbExistingSecret. Set one in the environment values.
+  dbRootUser: root
+
+  # Upstream defaults to two Valkey subcharts (cache and queue); kept.
+
+  persistence:
+    worker:
+      enabled: true
+      size: 8Gi
+      accessModes:
+      - ReadWriteMany
+    logs:
+      # Logs go to stdout (FRAPPE_STREAM_LOGGING), not files.
+      enabled: false
+
+  # APISIX is the only entry point and targets gunicorn and socketio directly.
+  ingress:
+    enabled: false
+  nginx:
+    replicaCount: 0
+
+  worker:
+    gunicorn:
+      envVars: *frappeEnv
+    default:
+      envVars: *frappeEnv
+    short:
+      envVars: *frappeEnv
+    long:
+      envVars: *frappeEnv
+    scheduler:
+      envVars: *frappeEnv
+
+  socketio:
+    envVars: *frappeEnv
+
+  jobs:
+    configure:
+      enabled: true
+    createSite:
+      # Re-runs on every upgrade; "already exists" is treated as success upstream.
+      enabled: true
+      siteName: ""
+      adminExistingSecret: oan-a2c-admin
+      adminExistingSecretKey: password
+      installApps:
+      - oan_auth_service
+      - oan_a2c
+      dbType: mariadb
+    migrate:
+      # Off: it races create-site on a first install. The site-config job migrates.
+      enabled: false

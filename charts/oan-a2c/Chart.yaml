@@ -1,0 +1,31 @@
+apiVersion: v2
+name: oan-a2c
+description: OAN Access to Credit (A2C) Frappe app with oan_auth_service for OpenAgriNet (OAN);
+  reuses the pinned upstream Frappe Helm chart and adds the site configuration job.
+type: application
+version: 0.1.0-dev.1
+appVersion: version-16
+keywords:
+- oan
+- openagrinet
+- coss
+- frappe
+- a2c
+home: https://github.com/Centre-for-Open-Societal-Systems/oan_a2c
+sources:
+- https://github.com/Centre-for-Open-Societal-Systems/oan_a2c
+- https://github.com/Centre-for-Open-Societal-Systems/oan_auth_service
+- https://github.com/Centre-for-Open-Societal-Systems/oan-helm
+- https://github.com/frappe/helm
+maintainers:
+- name: OpenAgriNet (OAN) / COSS
+  url: https://github.com/Centre-for-Open-Societal-Systems/oan-helm
+dependencies:
+- name: erpnext
+  alias: frappe
+  version: 8.0.89
+  repository: https://helm.erpnext.com
+annotations:
+  oan.org/owner: OpenAgriNet (OAN) / COSS
+  oan.org/application-source: https://github.com/Centre-for-Open-Societal-Systems/oan_a2c
+  oan.org/chart-source: https://github.com/Centre-for-Open-Societal-Systems/oan-helm/tree/main/charts/oan-a2c

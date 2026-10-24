@@ -1,0 +1,19 @@
+# Upstream chart valkey/valkey 0.11.0 (Valkey 9.1.1) from https://valkey.io/valkey-helm/.
+# Not vendored or repackaged here.
+# Target: the gateway cluster. Release: name `apisix-valkey`, namespace `apisix`, so the
+# Service is apisix-valkey.apisix.svc.cluster.local.
+#
+# Holds the counters of the limit-count plugin for every app's routes (`redis.host` in
+# oan-grievance-gateway.yaml and oan-a2c-gateway.yaml). It sits next to APISIX so a rate
+# limit check never crosses clusters. Counters are short-lived, so there is no
+# persistence and no password: the Service is ClusterIP and only APISIX connects.
+
+dataStorage:
+  enabled: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
