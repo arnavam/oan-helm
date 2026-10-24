@@ -1,31 +1,43 @@
 # Values for the oan-grievance-gateway chart (oan_grievance_service/apisix/k8s).
-# Target: the grievance RKE2 node (13.233.56.204), not the OpenG2P cluster that `server`
-# in ../endpoints.yaml names.
-# Install in namespace `develop`, next to the grievance Frappe Services, so each
-# ApisixRoute backend resolves there. See docs/apisix-gateway.md.
+# Target: the gateway cluster, namespace `grievance`. Not the OpenG2P cluster that
+# `server` in ../endpoints.yaml names. The same file runs a local single-node cluster
+# (docs/grievance-service.md, "Local cluster").
+# The routes reach Frappe in the grievance app cluster through its node ports
+# (gatewayAccess in oan-grievance-service.yaml). See docs/apisix-gateway.md.
+#
+# Set at install, not here:
+# - web.externalHost and socket.externalHost: the grievance app node's private address,
+#   from the gateway cluster's network (locally: the OrbStack node address)
 
 ingressClassName: apisix
 
 hosts:
   - grievance-backend-dev.oanstaging.com
 
+# APISIX terminates TLS for `hosts` with this Secret (tls.crt, tls.key) in namespace
+# `grievance`. Dev: written by cert-manager. Local: a locally generated certificate.
+tls:
+  secretName: oan-grievance-tls
+
 # Frappe site name (Jenkinsfile `targets.develop.site`), sent as Host because Frappe
-# selects the site from it.
+# selects the site from it. Must equal siteName in oan-grievance-service.yaml.
 siteName: develop.grievance.test
 
-# Required: Service names in namespace `develop`, unconfirmed. The Frappe Deployment is
-# `backend`; point both at the frappe nginx Service instead if routing through it.
+# With externalHost set, serviceName only names the ApisixUpstream, and port is the node
+# port of oan-grievance-service.yaml gatewayAccess. Without it, serviceName and port are a
+# Service in this namespace (APISIX and Frappe in one cluster).
 web:
-  serviceName: ""
-  port: 8000
+  serviceName: grievance-frappe-gunicorn
+  externalHost: ""
+  port: 30800
 socket:
-  serviceName: ""
-  port: 9000
+  serviceName: grievance-frappe-socketio
+  externalHost: ""
+  port: 30900
 
-# Required: a Redis in the grievance cluster for limit-count counters. The OpenG2P Commons
-# Redis is in another cluster and is not reachable from here.
+# Limit-count counters, in the gateway cluster (valkey-gateway.yaml).
 redis:
-  host: ""
+  host: apisix-valkey.apisix.svc.cluster.local
 
 # Browser origins allowed to open a socket.io connection with a session cookie, and
 # regexes of origins the cors plugin allows. Localhost only until the grievance UI host

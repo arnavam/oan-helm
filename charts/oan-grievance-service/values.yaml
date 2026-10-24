@@ -1,0 +1,173 @@
+# Defaults for the OAN Grievance Service. Per-environment values live in
+# environments/<env>/values/oan-grievance-service.yaml. Secrets are never set here:
+# every secret is a Kubernetes Secret created outside Git (docs/grievance-service.md).
+
+# Frappe site this release serves. The create-site, migrate and site-config jobs and
+# the gateway's Host rewrite all use it.
+siteName: ""
+
+# Secrets created outside Git, in the release namespace.
+secrets:
+  # Key `jwt_v1.pem`: unencrypted RSA private key, at least 2048 bits. oan_auth_service
+  # refuses every login without it.
+  jwt: oan-grievance-jwt
+
+# Non-secret keys written to sites/<siteName>/site_config.json by the site-config job,
+# each through `bench set-config --parse`. Keys left out keep their current value.
+# grievance_clamav_host/port are set from `clamav` below when it is enabled.
+siteConfig:
+  host_name: ""
+  jwt_current_kid: v1
+  jwt_private_keys:
+    v1: keys/jwt_v1.pem
+  jwt_default_registration_role: Grievance Submitter
+  jwt_self_registerable_roles:
+  - Grievance Submitter
+  jwt_access_token_ttl: 900
+  jwt_refresh_token_ttl: 604800
+  jwt_refresh_token_ttl_remember_me: 7776000
+  jwt_issuer: oan-grievance
+  jwt_enforce_https: true
+  grievance_confirmation_window_days: 7
+  grievance_change_request_hours: 24
+  grievance_auto_escalation_enabled: true
+
+# Queues the app enqueues to, with their RQ timeout in seconds. Written bench-wide as
+# `workers` in common_site_config.json; without it frappe.enqueue rejects every job.
+grievanceQueues:
+  grievance_routing: 300
+  grievance_sla: 1800
+  grievance_scan: 300
+  grievance_notifications: 600
+
+# One Deployment per entry, running `bench worker --queue <queues joined by ,>`.
+# The upstream chart's default/short/long workers cannot listen on other queues.
+queueWorkers:
+- name: routing
+  queues: [grievance_routing]
+  replicaCount: 1
+  resources: {}
+- name: sla
+  queues: [grievance_sla]
+  replicaCount: 1
+  resources: {}
+- name: scan
+  queues: [grievance_scan]
+  replicaCount: 1
+  resources: {}
+- name: notifications
+  queues: [grievance_notifications]
+  replicaCount: 1
+  resources: {}
+
+# Malware scanning for attachments (services/scanning.py). The signature database is
+# downloaded by freshclam on every start into an emptyDir.
+clamav:
+  enabled: true
+  image:
+    repository: clamav/clamav-debian
+    tag: "1.4"
+    pullPolicy: IfNotPresent
+  port: 3310
+  resources:
+    requests:
+      memory: 1536Mi
+    limits:
+      memory: 3Gi
+
+# Services for an APISIX gateway in another cluster (the gateway chart's web.externalHost
+# and socket.externalHost). Off when APISIX runs in this cluster: it reaches the upstream
+# chart's ClusterIP Services directly. Restrict the ports to the gateway cluster's
+# addresses (security group, or loadBalancerSourceRanges); they carry plain HTTP.
+gatewayAccess:
+  enabled: false
+  # NodePort, or LoadBalancer with the provider's internal-load-balancer annotations.
+  type: NodePort
+  annotations: {}
+  loadBalancerSourceRanges: []
+  web:
+    port: 8000
+    nodePort: null
+  socket:
+    port: 9000
+    nodePort: null
+
+siteConfigJob:
+  # Delete finished site-config Jobs after a day; a new one runs on every upgrade.
+  ttlSecondsAfterFinished: 86400
+  backoffLimit: 3
+
+# Every Frappe container (upstream components and the queue workers above) gets these.
+# FRAPPE_STREAM_LOGGING sends frappe.logger output to stdout for the cluster collector.
+# FRAPPE_SENTRY_DSN is optional: without the Secret, Sentry stays off.
+commonEnv: &frappeEnv
+- name: FRAPPE_STREAM_LOGGING
+  value: "1"
+- name: FRAPPE_SENTRY_DSN
+  valueFrom:
+    secretKeyRef:
+      name: oan-grievance-sentry
+      key: dsn
+      optional: true
+
+# Upstream frappe/helm `erpnext` chart, aliased `frappe`. Its values go under this key.
+# Check names with `helm show values frappe/erpnext --version 8.0.89`.
+frappe:
+  image:
+    repository: ""
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  # Database: either mariadb-sts (in-chart, official mariadb image) or an external host
+  # via dbHost + dbExistingSecret. Set one in the environment values.
+  dbRootUser: root
+
+  # Upstream defaults to two Valkey subcharts (cache and queue); kept.
+
+  persistence:
+    worker:
+      enabled: true
+      size: 8Gi
+      accessModes:
+      - ReadWriteMany
+    logs:
+      # Logs go to stdout (FRAPPE_STREAM_LOGGING), not files.
+      enabled: false
+
+  # APISIX is the only entry point and targets gunicorn and socketio directly.
+  ingress:
+    enabled: false
+  nginx:
+    replicaCount: 0
+
+  worker:
+    gunicorn:
+      envVars: *frappeEnv
+    default:
+      envVars: *frappeEnv
+    short:
+      envVars: *frappeEnv
+    long:
+      envVars: *frappeEnv
+    scheduler:
+      envVars: *frappeEnv
+
+  socketio:
+    envVars: *frappeEnv
+
+  jobs:
+    configure:
+      enabled: true
+    createSite:
+      # Re-runs on every upgrade; "already exists" is treated as success upstream.
+      enabled: true
+      siteName: ""
+      adminExistingSecret: oan-grievance-admin
+      adminExistingSecretKey: password
+      installApps:
+      - oan_auth_service
+      - oan_grievance_service
+      dbType: mariadb
+    migrate:
+      # Off: it races create-site on a first install. The site-config job migrates.
+      enabled: false

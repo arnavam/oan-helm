@@ -1,0 +1,23 @@
+# Upstream chart local-path-provisioner v0.0.37, from a checkout of
+# https://github.com/rancher/local-path-provisioner at tag v0.0.37
+# (deploy/chart/local-path-provisioner). Not vendored or repackaged here.
+# Target: every cluster (the gateway cluster and each app cluster), and a local
+# single-node cluster.
+# Release: name `local-path-shared`, namespace `local-path-shared`.
+#
+# StorageClass `local-path-shared` gives ReadWriteMany volumes, which the Frappe sites
+# volume needs. In shared-filesystem mode every volume is a directory under
+# sharedFileSystemPath. That is correct only while every Pod runs on one node, or when
+# the path is a filesystem mounted on all nodes (NFS, EFS). Revisit before adding a node.
+
+storageClass:
+  create: true
+  name: local-path-shared
+  # Distinct from the k3s/OrbStack built-in `rancher.io/local-path`, so the two
+  # provisioners never act on each other's claims.
+  provisionerName: oan.org/local-path-shared
+  defaultClass: false
+  reclaimPolicy: Retain
+
+nodePathMap: []
+sharedFileSystemPath: /opt/local-path-shared

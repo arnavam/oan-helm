@@ -1,0 +1,32 @@
+apiVersion: v2
+name: oan-grievance-service
+description: OAN Grievance Service (Frappe app with oan_auth_service) for OpenAgriNet (OAN);
+  reuses the pinned upstream Frappe Helm chart and adds ClamAV, the grievance queue
+  workers and the site configuration job.
+type: application
+version: 0.1.0-dev.1
+appVersion: version-16
+keywords:
+- oan
+- openagrinet
+- coss
+- frappe
+- grievance
+home: https://github.com/Centre-for-Open-Societal-Systems/oan_grievance_service
+sources:
+- https://github.com/Centre-for-Open-Societal-Systems/oan_grievance_service
+- https://github.com/Centre-for-Open-Societal-Systems/oan_auth_service
+- https://github.com/Centre-for-Open-Societal-Systems/oan-helm
+- https://github.com/frappe/helm
+maintainers:
+- name: OpenAgriNet (OAN) / COSS
+  url: https://github.com/Centre-for-Open-Societal-Systems/oan-helm
+dependencies:
+- name: erpnext
+  alias: frappe
+  version: 8.0.89
+  repository: https://helm.erpnext.com
+annotations:
+  oan.org/owner: OpenAgriNet (OAN) / COSS
+  oan.org/application-source: https://github.com/Centre-for-Open-Societal-Systems/oan_grievance_service
+  oan.org/chart-source: https://github.com/Centre-for-Open-Societal-Systems/oan-helm/tree/main/charts/oan-grievance-service

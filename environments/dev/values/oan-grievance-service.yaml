@@ -1,0 +1,54 @@
+# Values for the oan-grievance-service chart (charts/oan-grievance-service).
+# Target: the grievance app cluster (RKE2 node 13.233.56.204), not the OpenG2P cluster
+# that `server` in ../endpoints.yaml names. The same file runs a local single-node cluster
+# (docs/grievance-service.md, "Local cluster").
+# Release `grievance`, namespace `develop`.
+#
+# Set at install, not here:
+# - frappe.image.tag: the Jenkins tag `develop-<build>-<sha>` (locally: `develop`)
+# - frappe.mariadb-sts.rootPassword: from Secret oan-grievance-db, with --set-string
+
+siteName: develop.grievance.test
+
+siteConfig:
+  host_name: https://grievance-backend-dev.oanstaging.com
+
+# The central APISIX gateway runs in another cluster and reaches gunicorn and socket.io on
+# these node ports (web.port and socket.port in oan-grievance-gateway.yaml). Allow them in
+# the node's security group from the gateway cluster's addresses only.
+gatewayAccess:
+  enabled: true
+  web:
+    nodePort: 30800
+  socket:
+    nodePort: 30900
+
+frappe:
+  image:
+    # Jenkinsfile IMAGE_REGISTRY/IMAGE_NAME. A local build tagged with this name is used
+    # without a pull (pullPolicy IfNotPresent).
+    repository: 379220350808.dkr.ecr.ap-south-1.amazonaws.com/oan-frappe
+    pullPolicy: IfNotPresent
+  # ECR pull Secret, see docs/ecr-pull-access.md.
+  imagePullSecrets: []
+
+  # MariaDB 11.8 (official image) inside the release. The upstream chart reads the root
+  # password only from this value, so it is passed at install from Secret
+  # oan-grievance-db, never written here.
+  mariadb-sts:
+    enabled: true
+    image:
+      tag: "11.8"
+    persistence:
+      storageClass: local-path-shared
+      size: 8Gi
+
+  persistence:
+    worker:
+      # ReadWriteMany: every Frappe Pod mounts the sites volume. See local-path-shared.yaml.
+      storageClass: local-path-shared
+      size: 8Gi
+
+  jobs:
+    createSite:
+      siteName: develop.grievance.test

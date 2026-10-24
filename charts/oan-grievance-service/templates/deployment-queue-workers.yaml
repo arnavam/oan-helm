@@ -1,0 +1,76 @@
+{{/*
+RQ workers for the grievance queues. Same image, sites PVC and environment as the
+upstream workers, whose queue names are fixed to default/short/long.
+
+`bench worker` rejects a queue missing from `workers` in common_site_config.json, so
+the init container waits until the site-config job has written it.
+*/}}
+{{- range .Values.queueWorkers }}
+{{- range .queues }}
+{{- if not (hasKey $.Values.grievanceQueues .) }}
+{{- fail (printf "queueWorkers: queue %s is not in grievanceQueues" .) }}
+{{- end }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $.Release.Name }}-worker-{{ .name }}
+  labels:
+    {{- include "grievance.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: worker-{{ .name }}
+spec:
+  replicas: {{ .replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: worker-{{ .name }}
+  template:
+    metadata:
+      labels:
+        {{- include "grievance.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: worker-{{ .name }}
+    spec:
+      {{- with $.Values.frappe.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml $.Values.frappe.podSecurityContext | nindent 8 }}
+      initContainers:
+      - name: wait-for-queue-config
+        image: {{ include "grievance.image" $ }}
+        imagePullPolicy: {{ $.Values.frappe.image.pullPolicy }}
+        workingDir: /home/frappe/frappe-bench/sites
+        command: ["bash", "-c"]
+        args:
+        - |
+          until /home/frappe/frappe-bench/env/bin/python -c 'import json, sys; w = json.load(open("common_site_config.json")).get("workers", {}); sys.exit(not all(q in w for q in sys.argv[1:]))' {{ join " " .queues }}; do
+            echo "waiting for workers config: {{ join "," .queues }}"; sleep 5
+          done
+        volumeMounts:
+        - name: sites-dir
+          mountPath: /home/frappe/frappe-bench/sites
+      containers:
+      - name: worker
+        image: {{ include "grievance.image" $ }}
+        imagePullPolicy: {{ $.Values.frappe.image.pullPolicy }}
+        args: ["bench", "worker", "--queue", {{ join "," .queues | quote }}]
+        env:
+          {{- toYaml $.Values.commonEnv | nindent 10 }}
+        resources:
+          {{- toYaml .resources | nindent 10 }}
+        securityContext:
+          {{- toYaml $.Values.frappe.securityContext | nindent 10 }}
+        volumeMounts:
+        - name: sites-dir
+          mountPath: /home/frappe/frappe-bench/sites
+        - name: logs
+          mountPath: /home/frappe/frappe-bench/logs
+      volumes:
+      - name: sites-dir
+        persistentVolumeClaim:
+          claimName: {{ include "grievance.sitesClaim" $ }}
+      - name: logs
+        emptyDir: {}
+{{- end }}
