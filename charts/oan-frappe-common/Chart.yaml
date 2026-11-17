@@ -3,7 +3,7 @@ name: oan-frappe-common
 description: Shared MariaDB and PostgreSQL databases for the OAN Frappe apps; deploys the
   frappe-common chart.
 type: application
-version: 0.1.0-develop.1
+version: 0.0.1-develop.1
 appVersion: version-16
 keywords:
 - oan

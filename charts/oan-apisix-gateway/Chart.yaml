@@ -3,7 +3,7 @@ name: oan-apisix-gateway
 description: APISIX gateway and Ingress Controller for OpenAgriNet (OAN); deploys the
   upstream apisix chart with the OAN gateway defaults. App routes install separately.
 type: application
-version: 0.1.0-develop.1
+version: 0.0.1-develop.1
 appVersion: 3.19.0
 keywords:
 - oan

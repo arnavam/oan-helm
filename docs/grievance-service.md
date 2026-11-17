@@ -31,7 +31,7 @@ node ports must accept only the gateway cluster's addresses.
 | Cluster | Release | Chart | Namespace | Values |
 | --- | --- | --- | --- | --- |
 | grievance, A2C | `csi-driver-nfs` | `csi-driver-nfs/csi-driver-nfs` 4.13.6 | `kube-system` | [nfs-csi.yaml](../environments/dev/values/nfs-csi.yaml) |
-| gateway | `apisix` | `oan-apisix-gateway` 0.1.0-develop.1 (apisix 2.18.2) | `apisix` | [values.yaml](../charts/oan-apisix-gateway/values.yaml) |
+| gateway | `apisix` | `oan-apisix-gateway` 0.0.1-develop.1 (apisix 2.18.2) | `apisix` | [values.yaml](../charts/oan-apisix-gateway/values.yaml) |
 | gateway | `apisix` (Redis included) | `bitnami/redis` 17.15.2, a dependency of `oan-apisix-gateway` | `apisix` | [values.yaml](../charts/oan-apisix-gateway/values.yaml) |
 | grievance | `grievance` | [charts/oan-grievance-service](../charts/oan-grievance-service) | `develop` | [oan-grievance-service.yaml](https://github.com/Centre-for-Open-Societal-Systems/oan_grievance_service/blob/develop/helm/environments/dev/oan-grievance-service.yaml) |
 | gateway | `oan-grievance-gateway` | `apisix/k8s` in the oan_grievance_service repository | `grievance` | [oan-grievance-gateway.yaml](https://github.com/Centre-for-Open-Societal-Systems/oan_grievance_service/blob/develop/helm/environments/dev/oan-grievance-gateway.yaml) |
